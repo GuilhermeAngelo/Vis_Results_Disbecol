@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Confirmar e-mail{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h1 class="text-xl font-semibold mb-4">Confirmar e-mail</h1>
+    {% if confirmation %}
+      <p class="text-sm text-slate-600 mb-4">Confirme o e-mail para concluir o cadastro.</p>
+      <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+        {% csrf_token %}
+        <button class="w-full rounded-lg bg-primary text-white py-2 font-medium hover:opacity-90">Confirmar</button>
+      </form>
+    {% else %}
+      <p class="text-sm text-red-600">Link inválido ou expirado.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,338 @@
+{% extends 'base.html' %}
+{% block title %}Meu dashboard{% endblock %}
+{% load dash_extras %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-1">Olá, {{ collab.nome }}</h1>
+<p class="text-sm text-slate-500 mb-6">Equipe: {{ collab.equipe|default:"—" }}</p>
+
+<!-- Filtro de período -->
+<form method="get" class="mb-6">
+  <div class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Início</label>
+      <input type="date" name="start" value="{{ start }}" class="rounded-lg border-slate-300 focus:border-primary focus:ring-primary">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fim</label>
+      <input type="date" name="end" value="{{ end }}" class="rounded-lg border-slate-300 focus:border-primary focus:ring-primary">
+    </div>
+    <div class="flex gap-2">
+      <button class="rounded-lg bg-primary text-white px-4 py-2 font-medium hover:opacity-90">Aplicar</button>
+      <a href="{% url 'dashboards:my' %}" class="rounded-lg border border-slate-300 px-4 py-2 text-slate-700 hover:bg-slate-50">Limpar</a>
+    </div>
+  </div>
+  <p class="text-xs text-slate-500 mt-2">Dica: deixe em branco para todo o período. Sem filtro, últimos 30 dias.</p>
+</form>
+
+<!-- Banner opcional para formulário -->
+{% if has_unmet and forms_url %}
+<div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+  <div class="flex items-center justify-between">
+    <div class="text-sm text-amber-800">
+      Encontramos indicador(es) <strong>fora da meta</strong> no período selecionado.
+      {% if unmet_names %}<span class="ml-2 text-xs opacity-80">(ex.: {{ unmet_names|join:", " }})</span>{% endif %}
+    </div>
+    <a href="{{ forms_url }}" target="_blank" rel="noopener"
+       class="rounded-lg bg-primary text-white px-4 py-2 font-medium hover:opacity-90">Enviar justificativa</a>
+  </div>
+</div>
+{% endif %}
+
+{% for section in sections %}
+  {% if section.codes %}
+    <h2 class="text-xl font-semibold mt-6 mb-3">{{ section.title }}</h2>
+
+    <!-- Cards -->
+    <div class="grid md:grid-cols-4 gap-4 mb-6">
+      {% for code in section.codes %}
+        {% with m=meta|get_item:code stat=self_stats|get_item:code %}
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="text-xs text-slate-500 mb-1 flex items-center justify-between">
+            <span class="truncate">{{ m.name }}</span>
+            <div class="flex items-center gap-2">
+              {# Selo APENAS se a MÉDIA do período estiver fora da meta #}
+              {% if stat and stat.avg and m.target_value is not none %}
+                {% if m.better_when == 'higher' and stat.avg < m.target_value %}
+                  <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800">
+                    Fora da meta
+                  </span>
+                {% elif m.better_when == 'lower' and stat.avg > m.target_value %}
+                  <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800">
+                    Fora da meta
+                  </span>
+                {% endif %}
+              {% endif %}
+
+              {% if m.target_value is not none %}
+                <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] text-slate-700">
+                  Meta:
+                  {% if m.is_time %}
+                    &nbsp;{{ m.target_value|minutes_to_hms }}
+                  {% else %}
+                    &nbsp;{{ m.target_value|floatformat:2 }}{% if m.unit %} {{ m.unit }}{% endif %}
+                  {% endif %}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="text-2xl font-semibold">
+            {% if stat and stat.avg %}
+              {% if m.is_time %}
+                {{ stat.avg|minutes_to_hms }}
+              {% else %}
+                {{ stat.avg|floatformat:2 }} <span class="text-sm text-slate-400">{{ m.unit }}</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </div>
+
+          {% if stat and stat.count %}
+            <div class="text-xs text-slate-500 mt-1">Registros no período: {{ stat.count }}</div>
+          {% endif %}
+
+          {# lista informativa de dias fora da meta (não afeta o selo) #}
+          {% with days=fail_days|get_item:code %}
+            {% if days and days|length > 0 %}
+              {% with shown=days|slice:":8" %}
+                <div class="text-xs text-red-700 mt-2">
+                  Dias fora da meta:
+                  {% for d in shown %}{% with y=d|slice:":4" m=d|slice:"5:7" dd=d|slice:"8:10" %}{{ dd }}/{{ m }}{% if not forloop.last %}, {% endif %}{% endwith %}{% endfor %}
+                  {% if days|length > 8 %} e +{{ days|length|add:"-8" }}{% endif %}
+                </div>
+              {% endwith %}
+            {% endif %}
+          {% endwith %}
+        </div>
+        {% endwith %}
+      {% endfor %}
+    </div>
+
+    <!-- Gráficos -->
+    <div id="charts-{{ section.key }}" class="grid md:grid-cols-2 gap-6"></div>
+  {% endif %}
+{% endfor %}
+
+{{ series|json_script:"series-data" }}
+{{ meta|json_script:"meta-data" }}
+{{ sections|json_script:"sections-data" }}
+{{ fail_days|json_script:"fail-days-data" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
+<script>
+(() => {
+  const series   = JSON.parse(document.getElementById('series-data').textContent);
+  const meta     = JSON.parse(document.getElementById('meta-data').textContent);
+  const sections = JSON.parse(document.getElementById('sections-data').textContent);
+  const failDays = JSON.parse(document.getElementById('fail-days-data').textContent);
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const minutesToHMS = (min) => {
+    const total = Math.round(Number(min) * 60);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  };
+  const toDM = (iso) => {
+    if (typeof iso !== 'string') return iso ?? '';
+    const p = iso.split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}` : iso;
+  };
+
+  // Parser robusto
+  const parseValue = (v) => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+
+    if (typeof v === 'string') {
+      const s = v.trim();
+
+      // HH:MM[:SS] -> minutos (com segundos fracionários)
+      const t = s.match(/^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/);
+      if (t) {
+        const hh = parseInt(t[1] || '0', 10);
+        const mm = parseInt(t[2] || '0', 10);
+        const ss = parseInt(t[3] || '0', 10);
+        return hh * 60 + mm + ss / 60;
+      }
+
+      let s2 = s;
+      if (s.includes(',') && s.includes('.')) {
+        // "1.234,56"
+        s2 = s.replace(/\./g, '').replace(',', '.');
+      } else if (s.includes(',') && !s.includes('.')) {
+        // "540,0"
+        s2 = s.replace(',', '.');
+      }
+      const n = Number(s2);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  sections.forEach(({ key, codes }) => {
+    if (!codes || !codes.length) return;
+    const wrap = document.getElementById(`charts-${key}`);
+    if (!wrap) return;
+
+    codes.forEach((code) => {
+      const indicatorName = meta[code]?.name || code;
+      const unit    = meta[code]?.unit || "";
+      const isTime  = !!meta[code]?.is_time;
+      const target  = meta[code]?.target_value;
+
+      const card = document.createElement('div');
+      card.className = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
+      const header = document.createElement('div');
+      header.className = "flex items-center justify-between mb-3";
+      header.innerHTML = `<div class="font-medium">${indicatorName}</div>`;
+      const canvas = document.createElement('canvas');
+      card.appendChild(header);
+      card.appendChild(canvas);
+      wrap.appendChild(card);
+
+      const raw = (series[code] || []);
+      const rawLabels = raw.map(p => p.date);
+      const labels = rawLabels.map(toDM);
+      const values = raw.map(p => parseValue(p.value));
+
+      const failSet = new Set(failDays[code] || []);
+      const pointBg = rawLabels.map((d, i) => (failSet.has(d) && values[i] > 0) ? '#ef4444' : '#111827');
+      const pointBr = rawLabels.map((d, i) => (failSet.has(d) && values[i] > 0) ? '#ef4444' : '#111827');
+
+      const maxVal   = Math.max(...values, 0, parseValue(target));
+      const headroom = maxVal > 0 ? maxVal * 0.15 : 1;
+
+      const datasets = [{
+        label: indicatorName,
+        data: values,
+        borderWidth: 2,
+        tension: 0.25,
+        spanGaps: true,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.08)',
+        pointRadius: 3,
+        pointHoverRadius: 4,
+        pointBackgroundColor: pointBg,
+        pointBorderColor: pointBr,
+      }];
+
+      if (target !== null && target !== undefined) {
+        datasets.push({
+          label: 'Meta',
+          data: labels.map(() => parseValue(target)),
+          borderWidth: 1,
+          borderDash: [6, 6],
+          spanGaps: true,
+          borderColor: '#f472b6',
+          pointRadius: 0,
+        });
+      }
+
+      try {
+        const chart = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { top: 36, right: 8, bottom: 8, left: 8 } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                suggestedMax: maxVal + headroom,
+                ticks: {
+                  callback: (v) => isTime ? minutesToHMS(v) : `${v} ${unit}`.trim()
+                }
+              },
+              x: {
+                ticks: {
+                  autoSkip: true,
+                  maxTicksLimit: 8,
+                  callback: function (val, idx) {
+                    return labels[val] ?? labels[idx] ?? '';
+                  }
+                }
+              }
+            },
+            plugins: {
+              legend: { display: true },
+              tooltip: {
+                callbacks: {
+                  title: (items) => (items?.[0]?.label ?? ''),
+                  label: (ctx) => {
+                    const dsLabel = ctx.dataset?.label || '';
+                    if (dsLabel === 'Meta') {
+                      const t = parseValue(target);
+                      const tStr = isTime ? minutesToHMS(t) : `${t.toFixed(2)} ${unit}`.trim();
+                      return `Meta: ${tStr}`;
+                    }
+                    const val = Number(ctx.parsed?.y ?? 0);
+                    const iso = rawLabels[ctx.dataIndex];
+                    const isFail = failSet.has(iso) && val > 0;
+                    const base = isTime ? minutesToHMS(val) : `${val.toFixed(2)} ${unit}`.trim();
+                    return isFail ? `Fora da meta • ${base}` : base;
+                  }
+                }
+              },
+              datalabels: {
+                display: (ctx) => {
+                  if (ctx.dataset.label === 'Meta') return false;
+                  const y = Number(ctx.parsed?.y ?? 0);
+                  return y > 0;
+                },
+                formatter: (v, ctx) => {
+                  const iso = rawLabels[ctx.dataIndex];
+                  const label = isTime ? minutesToHMS(v) : Number(v).toFixed(2) + (unit ? ' ' + unit : '');
+                  return (failSet.has(iso) && Number(v) > 0) ? `✱ ${label}` : label;
+                },
+                align: (ctx) => {
+                  if (ctx.dataset.label === 'Meta') return 'top';
+                  const ds = Array.isArray(ctx.dataset?.data) ? ctx.dataset.data : [];
+                  const i  = ctx.dataIndex;
+                  const val= Number(ctx.parsed?.y ?? 0);
+                  const prev = i > 0 ? Number(ds[i-1] ?? 0) : undefined;
+                  const next = i < ds.length - 1 ? Number(ds[i+1] ?? 0) : undefined;
+                  let pos = 'top';
+                  if ((prev !== undefined && prev > val) || (next !== undefined && next > val)) pos = 'bottom';
+                  if (i % 2 === 1) pos = (pos === 'top') ? 'bottom' : 'top';
+                  return pos;
+                },
+                offset: (ctx) => (ctx.dataIndex % 2 ? 10 : 6),
+                backgroundColor: 'rgba(255,255,255,0.95)',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                borderRadius: 4,
+                padding: { top: 2, bottom: 2, left: 4, right: 4 },
+                font: { size: 10, weight: '500' },
+                color: (ctx) => {
+                  if (ctx.dataset.label === 'Meta') return 'transparent';
+                  const iso = rawLabels[ctx.dataIndex];
+                  return (failSet.has(iso) && Number(ctx.parsed?.y ?? 0) > 0) ? '#b91c1c' : '#334155';
+                },
+                clamp: false,
+                clip: false,
+              }
+            }
+          },
+          plugins: [ChartDataLabels]
+        });
+
+        canvas.parentElement.style.height = '280px';
+      } catch (e) {
+        const note = document.createElement('div');
+        note.className = 'text-xs text-red-600';
+        note.textContent = 'Não foi possível renderizar o gráfico deste indicador.';
+        card.appendChild(note);
+        console.error('Chart error for', code, e);
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

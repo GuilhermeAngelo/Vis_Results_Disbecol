@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load form_extras %}
+{% block title %}Entrar{% endblock %}
+{% load i18n %}
+
+{% block content %}
+<div class="max-w-sm mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h1 class="text-xl font-semibold mb-4">Entrar</h1>
+    <form method="post" action="{% url 'account_login' %}" class="space-y-4">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Usuário ou e-mail</label>
+        {{ form.login|add_class:"w-full rounded-lg border-slate-300 focus:border-primary focus:ring-primary" }}
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Senha</label>
+        {{ form.password|add_class:"w-full rounded-lg border-slate-300 focus:border-primary focus:ring-primary" }}
+      </div>
+      <div class="flex items-center justify-between text-sm">
+        <label class="flex items-center gap-2">
+          {{ form.remember }}
+          <span>Lembrar</span>
+        </label>
+        <a class="text-primary hover:underline" href="{% url 'account_reset_password' %}">Esqueci minha senha</a>
+      </div>
+      <button class="w-full rounded-lg bg-primary text-white py-2 font-medium hover:opacity-90">Entrar</button>
+    </form>
+
+    <p class="text-sm text-slate-500 mt-4">
+        Ainda não tem conta?
+    </p>
+    <a href="{% url 'account_signup' %}"
+    class="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-white border border-slate-300 py-2 font-medium hover:bg-slate-50">
+    Criar conta
+    </a>
+
+  </div>
+</div>
+{% endblock %}

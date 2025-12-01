@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Criar conta{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h1 class="text-xl font-semibold mb-4">Criar conta</h1>
+    <form method="post" action="{% url 'account_signup' %}" class="space-y-2">
+      {% csrf_token %}
+      {% include "account/_form_fields.html" %}
+      <button class="w-full rounded-lg bg-primary text-white py-2 font-medium hover:opacity-90">Cadastrar</button>
+    </form>
+    <p class="text-sm text-slate-500 mt-4">
+      Já tem conta?
+      <a class="text-primary hover:underline" href="{% url 'account_login' %}">Entrar</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

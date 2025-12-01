@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Uploads{% endblock %}
+{% load form_extras %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-4">Upload de Planilha</h1>
+
+<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm max-w-2xl">
+  <form id="upload-form" method="post" action="{% url 'uploads:upload' %}" enctype="multipart/form-data" class="space-y-6">
+    {% csrf_token %}
+
+    <!-- Seleção da Métrica -->
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Métrica</label>
+
+      {% if form %}
+        {{ form.metric_type|add_class:"w-full rounded-lg border-slate-300 focus:border-primary focus:ring-primary" }}
+        {% if form.metric_type.errors %}
+          <p class="mt-1 text-xs text-red-600">{{ form.metric_type.errors }}</p>
+        {% endif %}
+      {% else %}
+        <select name="metric_type"
+                class="w-full rounded-lg border-slate-300 focus:border-primary focus:ring-primary" required>
+          <option value="" selected disabled>Selecione a métrica</option>
+          {% if metric_types %}
+            {% for m in metric_types %}
+              <option value="{{ m.id }}">{{ m.name }}{% if m.unit %} ({{ m.unit }}){% endif %}</option>
+            {% endfor %}
+          {% else %}
+            <option disabled>Cadastre métricas no /admin/ primeiro</option>
+          {% endif %}
+        </select>
+      {% endif %}
+
+      <p class="mt-1 text-xs text-slate-500">
+        Escolha o indicador correto para a planilha que você vai subir.
+      </p>
+    </div>
+
+    <!-- Dropzone / Input de arquivo -->
+    <div>
+      <label class="block text-sm text-slate-600 mb-2">Arquivo Excel</label>
+
+      <div id="dropzone"
+           class="rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition-colors
+                  flex items-center justify-center text-slate-500 h-32 cursor-pointer">
+        <div class="text-center">
+          <div class="text-sm font-medium">Arraste e solte o arquivo aqui</div>
+          <div class="text-xs">ou clique para selecionar</div>
+          <div id="file-hint" class="text-xs mt-2 text-slate-400">Nenhum arquivo selecionado</div>
+        </div>
+      </div>
+
+      <!-- input real -->
+      <input id="file-input" type="file" name="file" accept=".xlsx,.xls" class="hidden" required />
+
+      <p class="mt-1 text-xs text-slate-500">
+        Tamanho máximo sugerido: 10&nbsp;MB. Apenas arquivos <code>.xlsx</code> ou <code>.xls</code>.
+      </p>
+    </div>
+
+    <!-- Ações -->
+    <div class="flex items-center gap-3">
+      <button type="submit"
+              id="submit-btn"
+              class="rounded-lg bg-primary text-white px-4 py-2 font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled>
+        Enviar
+      </button>
+      <button type="button"
+              id="clear-btn"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-slate-700 hover:bg-slate-50">
+        Limpar
+      </button>
+    </div>
+
+    <!-- Ajuda / Especificação -->
+    <div class="border-t border-slate-200 pt-4">
+      <div class="text-sm font-medium mb-1">Estrutura esperada na aba ativa</div>
+      <p class="text-xs text-slate-600">
+        A primeira linha deve ser o cabeçalho com as colunas
+        <code>colaborador_id</code>, <code>data</code>, <code>valor</code>.
+        A <b>data</b> pode ser célula de data do Excel ou texto em <code>YYYY-MM-DD</code>/<code>DD/MM/YYYY</code>.
+      </p>
+      <pre class="mt-3 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs overflow-auto"><code>colaborador_id | data       | valor
+D123           | 2025-10-01 | 0,92  (ou 0.92)
+D123           | 02/10/2025 | 0,95
+D456           | 2025-10-01 | 0,88</code></pre>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById('upload-form');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const fileHint = document.getElementById('file-hint');
+    const submitBtn = document.getElementById('submit-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    const enableSubmit = (ok) => { submitBtn.disabled = !ok; };
+
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    ['dragenter', 'dragover'].forEach(ev =>
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('bg-slate-100', 'border-primary');
+      })
+    );
+    ['dragleave', 'drop'].forEach(ev =>
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('bg-slate-100', 'border-primary');
+      })
+    );
+
+    function isExcel(name) {
+      name = (name || "").toLowerCase();
+      return name.endsWith(".xlsx") || name.endsWith(".xls");
+    }
+
+    dropzone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      if (!isExcel(file.name)) {
+        alert('Por favor, selecione um arquivo .xlsx ou .xls');
+        return;
+      }
+      fileInput.files = e.dataTransfer.files;
+      fileHint.textContent = file.name;
+      enableSubmit(true);
+    });
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file) {
+        if (!isExcel(file.name)) {
+          alert('Por favor, selecione um arquivo .xlsx ou .xls');
+          fileInput.value = '';
+          enableSubmit(false);
+          fileHint.textContent = 'Nenhum arquivo selecionado';
+          return;
+        }
+        fileHint.textContent = file.name;
+        enableSubmit(true);
+      } else {
+        fileHint.textContent = 'Nenhum arquivo selecionado';
+        enableSubmit(false);
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      fileInput.value = '';
+      fileHint.textContent = 'Nenhum arquivo selecionado';
+      enableSubmit(false);
+      const metricSelect = form.querySelector('select[name="metric_type"]');
+      if (metricSelect) metricSelect.selectedIndex = 0;
+    });
+
+    form.addEventListener('submit', (e) => {
+      const hasFile = !!(fileInput.files && fileInput.files.length);
+      if (!hasFile) {
+        e.preventDefault();
+        alert('Selecione uma planilha antes de enviar.');
+      }
+    });
+  })();
+</script>
+{% endblock %}
